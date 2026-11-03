@@ -1464,6 +1464,7 @@ struct task_struct {
 	unsigned int sessionid;
 #endif
 	seccomp_t seccomp;
+	unsigned no_new_privs:1;
 
 /* Thread group tracking */
    	u32 parent_exec_id;

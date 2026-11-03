@@ -125,3 +125,6 @@
 #define PR_GET_CHILD_SUBREAPER 37
 
 #endif /* _LINUX_PRCTL_H */
+
+#define PR_SET_NO_NEW_PRIVS 38
+#define PR_GET_NO_NEW_PRIVS 39

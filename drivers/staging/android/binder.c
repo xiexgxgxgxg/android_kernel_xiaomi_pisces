@@ -1430,6 +1430,7 @@ static void binder_transaction(struct binder_proc *proc,
 	size_t *offp, *off_end;
 	size_t *off_start;
 	size_t num_offsets;
+	size_t user_offset = 0;
 	u8 *sg_bufp, *sg_buf_end;
 	struct binder_proc *target_proc;
 	struct binder_thread *target_thread = NULL;
@@ -1602,6 +1603,12 @@ static void binder_transaction(struct binder_proc *proc,
 		return_error = BR_FAILED_REPLY;
 		goto err_binder_alloc_buf_failed;
 	}
+	/* pisces: 3.4 binder maps buffers at a kernel vmalloc address and a
+	 * different user address; keep the constant difference for PTR fixups. */
+	if (target_proc->vma)
+		user_offset = (size_t)target_proc->buffer -
+			      (size_t)target_proc->vma->vm_start;
+
 	t->buffer->allow_user_free = 0;
 	t->buffer->debug_id = t->debug_id;
 	t->buffer->transaction = t;
@@ -1752,9 +1759,8 @@ static void binder_transaction(struct binder_proc *proc,
 				return_error = BR_FAILED_REPLY;
 				goto err_copy_data_failed;
 			}
-			/* pisces: 3.4 binder maps buffers at the same VA for user
-			 * and kernel, so the kernel address is the user address. */
-			bp->buffer = (uintptr_t)sg_bufp;
+			/* hand the target the user-space address of the copy */
+			bp->buffer = (uintptr_t)sg_bufp - user_offset;
 			sg_bufp += ALIGN(bp->length, sizeof(void *));
 
 			if (bp->flags & BINDER_BUFFER_FLAG_HAS_PARENT) {
@@ -1771,9 +1777,9 @@ static void binder_transaction(struct binder_proc *proc,
 					return_error = BR_FAILED_REPLY;
 					goto err_bad_offset;
 				}
-				*(uintptr_t *)((u8 *)(uintptr_t)
-					parent->buffer + bp->parent_offset) =
-					bp->buffer;
+				*(uintptr_t *)((u8 *)((uintptr_t)
+					parent->buffer + user_offset) +
+					bp->parent_offset) = bp->buffer;
 			}
 		} break;
 

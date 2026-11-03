@@ -2011,6 +2011,14 @@ config USE_LDRDSTRD_OVER_LDMSTM
 	  Cortex-A15 perform better when use LDRD/STRD to access memory.
 	  Selecting this to optimize memory copy routines.
 
+config SECCOMP_FILTER
+	bool "Enable seccomp filter support"
+	depends on SECCOMP
+	default y
+	---help---
+	  Enable SECCOMP_MODE_FILTER (BPF) support, required by Android 9
+	  userspace. Without it zygote cannot install syscall filters.
+
 config SECCOMP
 	bool
 	prompt "Enable seccomp to safely compute untrusted bytecode"

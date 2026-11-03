@@ -387,6 +387,14 @@
 /* 375 */	CALL(sys_setns)
 		CALL(sys_process_vm_readv)
 		CALL(sys_process_vm_writev)
+/* 378 */	CALL(sys_ni_syscall)
+		CALL(sys_ni_syscall)
+		CALL(sys_ni_syscall)
+		CALL(sys_ni_syscall)
+		CALL(sys_ni_syscall)
+		CALL(sys_ni_syscall)
+/* 384 */	CALL(sys_getrandom)
+		CALL(sys_memfd_create)
 #ifndef syscalls_counted
 .equ syscalls_padding, ((NR_syscalls + 3) & ~3) - NR_syscalls
 #define syscalls_counted

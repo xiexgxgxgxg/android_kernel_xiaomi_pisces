@@ -243,6 +243,7 @@
 #include <linux/fcntl.h>
 #include <linux/slab.h>
 #include <linux/random.h>
+#include <linux/syscalls.h>
 #include <linux/poll.h>
 #include <linux/init.h>
 #include <linux/fs.h>
@@ -1491,4 +1492,30 @@ randomize_range(unsigned long start, unsigned long end, unsigned long len)
 	if (end <= start + len)
 		return 0;
 	return PAGE_ALIGN(get_random_int() % range + start);
+}
+
+/*
+ * getrandom(2) - backport from 3.17 for Android 9 userspace.
+ */
+SYSCALL_DEFINE3(getrandom, char __user *, buf, size_t, count,
+		unsigned int, flags)
+{
+	unsigned char tmp[256];
+	size_t total = count;
+
+	if (flags & ~(GRND_NONBLOCK | GRND_RANDOM))
+		return -EINVAL;
+	if (count > INT_MAX)
+		return -EINVAL;
+
+	while (count) {
+		size_t n = min(count, sizeof(tmp));
+
+		get_random_bytes(tmp, n);
+		if (copy_to_user(buf, tmp, n))
+			return -EFAULT;
+		buf += n;
+		count -= n;
+	}
+	return total;
 }

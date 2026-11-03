@@ -22,6 +22,7 @@
  */
 
 #include <linux/fs.h>
+#include <linux/syscalls.h>
 #include <linux/init.h>
 #include <linux/vfs.h>
 #include <linux/mount.h>
@@ -30,6 +31,7 @@
 #include <linux/mm.h>
 #include <linux/export.h>
 #include <linux/swap.h>
+#include <linux/memfd.h>
 
 static struct vfsmount *shm_mnt;
 
@@ -2808,3 +2810,40 @@ struct page *shmem_read_mapping_page_gfp(struct address_space *mapping,
 #endif
 }
 EXPORT_SYMBOL_GPL(shmem_read_mapping_page_gfp);
+
+/*
+ * memfd_create(2) - backport from 3.17 for Android 9 userspace.
+ * Sealing is not implemented here; MFD_ALLOW_SEALING is accepted but
+ * F_ADD_SEALS will fail.
+ */
+SYSCALL_DEFINE2(memfd_create, const char __user *, uname, unsigned int, flags)
+{
+	char *name;
+	struct file *file;
+	int fd, err;
+
+	if (flags & ~(MFD_CLOEXEC | MFD_ALLOW_SEALING))
+		return -EINVAL;
+
+	name = strndup_user(uname, 256);
+	if (IS_ERR(name))
+		return PTR_ERR(name);
+
+	fd = get_unused_fd_flags(flags & MFD_CLOEXEC ? O_CLOEXEC : 0);
+	if (fd < 0) {
+		err = fd;
+		goto out;
+	}
+
+	file = shmem_file_setup(name, 0, VM_NORESERVE);
+	if (IS_ERR(file)) {
+		err = PTR_ERR(file);
+		put_unused_fd(fd);
+		goto out;
+	}
+	fd_install(fd, file);
+	err = 0;
+out:
+	kfree(name);
+	return err ? err : fd;
+}

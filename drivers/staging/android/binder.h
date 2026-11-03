@@ -147,6 +147,12 @@ struct binder_transaction_data {
 	} data;
 };
 
+struct binder_transaction_data_sg {
+	struct binder_transaction_data transaction_data;
+	size_t	buffers_size;
+};
+
+
 struct binder_ptr_cookie {
 	void *ptr;
 	void *cookie;
@@ -266,6 +272,8 @@ enum BinderDriverCommandProtocol {
 	 */
 
 	BC_FREE_BUFFER = _IOW('c', 3, int),
+	BC_TRANSACTION_SG = _IOW('c', 17, struct binder_transaction_data_sg),
+	BC_REPLY_SG = _IOW('c', 18, struct binder_transaction_data_sg),
 	/*
 	 * void *: ptr to transaction data received on a read
 	 */

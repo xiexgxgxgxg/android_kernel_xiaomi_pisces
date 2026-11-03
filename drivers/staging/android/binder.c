@@ -750,7 +750,8 @@ err_no_vma:
 
 static struct binder_buffer *binder_alloc_buf(struct binder_proc *proc,
 					      size_t data_size,
-					      size_t offsets_size, int is_async)
+					      size_t offsets_size,
+					      size_t extra_size, int is_async)
 {
 	struct rb_node *n = proc->free_buffers.rb_node;
 	struct binder_buffer *buffer;
@@ -767,7 +768,8 @@ static struct binder_buffer *binder_alloc_buf(struct binder_proc *proc,
 	}
 
 	size = ALIGN(data_size, sizeof(void *)) +
-		ALIGN(offsets_size, sizeof(void *));
+		ALIGN(offsets_size, sizeof(void *)) +
+		ALIGN(extra_size, sizeof(void *));
 
 	if (size < data_size || size < offsets_size) {
 		binder_user_error("binder: %d: got transaction with invalid "
@@ -1420,7 +1422,8 @@ static void binder_transaction_buffer_release(struct binder_proc *proc,
 
 static void binder_transaction(struct binder_proc *proc,
 			       struct binder_thread *thread,
-			       struct binder_transaction_data *tr, int reply)
+			       struct binder_transaction_data *tr, int reply,
+			       size_t extra_buffers_size)
 {
 	struct binder_transaction *t;
 	struct binder_work *tcomplete;
@@ -1590,7 +1593,8 @@ static void binder_transaction(struct binder_proc *proc,
 	trace_binder_transaction(reply, t, target_node);
 
 	t->buffer = binder_alloc_buf(target_proc, tr->data_size,
-		tr->offsets_size, !reply && (t->flags & TF_ONE_WAY));
+		tr->offsets_size, extra_buffers_size,
+		!reply && (t->flags & TF_ONE_WAY));
 	if (t->buffer == NULL) {
 		return_error = BR_FAILED_REPLY;
 		goto err_binder_alloc_buf_failed;
@@ -2030,7 +2034,19 @@ int binder_thread_write(struct binder_proc *proc, struct binder_thread *thread,
 			if (copy_from_user(&tr, ptr, sizeof(tr)))
 				return -EFAULT;
 			ptr += sizeof(tr);
-			binder_transaction(proc, thread, &tr, cmd == BC_REPLY);
+			binder_transaction(proc, thread, &tr, cmd == BC_REPLY, 0);
+			break;
+		}
+
+		case BC_TRANSACTION_SG:
+		case BC_REPLY_SG: {
+			struct binder_transaction_data_sg tr;
+
+			if (copy_from_user(&tr, ptr, sizeof(tr)))
+				return -EFAULT;
+			ptr += sizeof(tr);
+			binder_transaction(proc, thread, &tr.transaction_data,
+					   cmd == BC_REPLY_SG, tr.buffers_size);
 			break;
 		}
 

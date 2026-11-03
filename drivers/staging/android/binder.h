@@ -32,6 +32,7 @@ enum {
 	BINDER_TYPE_HANDLE	= B_PACK_CHARS('s', 'h', '*', B_TYPE_LARGE),
 	BINDER_TYPE_WEAK_HANDLE	= B_PACK_CHARS('w', 'h', '*', B_TYPE_LARGE),
 	BINDER_TYPE_FD		= B_PACK_CHARS('f', 'd', '*', B_TYPE_LARGE),
+	BINDER_TYPE_PTR		= B_PACK_CHARS('p', 't', '*', B_TYPE_LARGE),
 };
 
 enum {
@@ -65,6 +66,23 @@ struct flat_binder_object {
  * On 64-bit platforms where user code may run in 32-bits the driver must
  * translate the buffer (and local binder) addresses apropriately.
  */
+
+struct binder_object_header {
+	unsigned int	type;
+};
+
+enum {
+	BINDER_BUFFER_FLAG_HAS_PARENT = 0x01,
+};
+
+struct binder_buffer_object {
+	struct binder_object_header	hdr;
+	unsigned int			flags;
+	size_t				buffer;
+	size_t				length;
+	size_t				parent;
+	size_t				parent_offset;
+};
 
 struct binder_write_read {
 	signed long	write_size;	/* bytes to write */

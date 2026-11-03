@@ -1428,6 +1428,9 @@ static void binder_transaction(struct binder_proc *proc,
 	struct binder_transaction *t;
 	struct binder_work *tcomplete;
 	size_t *offp, *off_end;
+	size_t *off_start;
+	size_t num_offsets;
+	u8 *sg_bufp, *sg_buf_end;
 	struct binder_proc *target_proc;
 	struct binder_thread *target_thread = NULL;
 	struct binder_node *target_node = NULL;
@@ -1629,10 +1632,14 @@ static void binder_transaction(struct binder_proc *proc,
 		goto err_bad_offset;
 	}
 	off_end = (void *)offp + tr->offsets_size;
+	off_start = offp;
+	num_offsets = tr->offsets_size / sizeof(size_t);
+	sg_bufp = (u8 *)PTR_ALIGN(off_end, sizeof(void *));
+	sg_buf_end = sg_bufp + extra_buffers_size;
 	for (; offp < off_end; offp++) {
 		struct flat_binder_object *fp;
-		if (*offp > t->buffer->data_size - sizeof(*fp) ||
-		    t->buffer->data_size < sizeof(*fp) ||
+		if (*offp > t->buffer->data_size - sizeof(struct binder_object_header) ||
+		    t->buffer->data_size < sizeof(struct binder_object_header) ||
 		    !IS_ALIGNED(*offp, sizeof(void *))) {
 			binder_user_error("binder: %d:%d got transaction with "
 				"invalid offset, %zd\n",
@@ -1721,6 +1728,52 @@ static void binder_transaction(struct binder_proc *proc,
 					     "        ref %d desc %d -> ref %d desc %d (node %d)\n",
 					     ref->debug_id, ref->desc, new_ref->debug_id,
 					     new_ref->desc, ref->node->debug_id);
+			}
+		} break;
+
+		case BINDER_TYPE_PTR: {
+			struct binder_buffer_object *bp =
+				(struct binder_buffer_object *)fp;
+			size_t buf_left = sg_buf_end - sg_bufp;
+
+			if (bp->length > buf_left) {
+				binder_user_error("binder: %d:%d got transaction "
+					"with too large buffer\n",
+					proc->pid, thread->pid);
+				return_error = BR_FAILED_REPLY;
+				goto err_bad_offset;
+			}
+			if (copy_from_user(sg_bufp,
+					(const void __user *)(uintptr_t)bp->buffer,
+					bp->length)) {
+				binder_user_error("binder: %d:%d got transaction "
+					"with invalid buffer ptr\n",
+					proc->pid, thread->pid);
+				return_error = BR_FAILED_REPLY;
+				goto err_copy_data_failed;
+			}
+			/* pisces: 3.4 binder maps buffers at the same VA for user
+			 * and kernel, so the kernel address is the user address. */
+			bp->buffer = (uintptr_t)sg_bufp;
+			sg_bufp += ALIGN(bp->length, sizeof(void *));
+
+			if (bp->flags & BINDER_BUFFER_FLAG_HAS_PARENT) {
+				struct binder_buffer_object *parent;
+				if (bp->parent >= num_offsets) {
+					return_error = BR_FAILED_REPLY;
+					goto err_bad_offset;
+				}
+				parent = (struct binder_buffer_object *)
+					(t->buffer->data + off_start[bp->parent]);
+				if (parent->hdr.type != BINDER_TYPE_PTR ||
+				    parent->length < bp->parent_offset +
+						     sizeof(uintptr_t)) {
+					return_error = BR_FAILED_REPLY;
+					goto err_bad_offset;
+				}
+				*(uintptr_t *)((u8 *)(uintptr_t)
+					parent->buffer + bp->parent_offset) =
+					bp->buffer;
 			}
 		} break;
 

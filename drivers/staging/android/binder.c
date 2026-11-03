@@ -48,8 +48,18 @@ static HLIST_HEAD(binder_dead_nodes);
 
 static struct dentry *binder_debugfs_dir_entry_root;
 static struct dentry *binder_debugfs_dir_entry_proc;
-static struct binder_node *binder_context_mgr_node;
-static uid_t binder_context_mgr_uid = -1;
+
+/* pisces: one binder context per misc device (binder/hwbinder/vndbinder) */
+struct binder_device {
+	struct miscdevice miscdev;
+	struct binder_node *context_mgr_node;
+	uid_t context_mgr_uid;
+};
+
+#define BINDER_MAX_DEVICES 4
+static struct binder_device binder_devices[BINDER_MAX_DEVICES];
+static int binder_device_count;
+
 static int binder_last_id;
 static struct workqueue_struct *binder_deferred_workqueue;
 
@@ -237,6 +247,8 @@ struct binder_node {
 	struct list_head async_todo;
 };
 
+
+
 struct binder_ref_death {
 	struct binder_work work;
 	void __user *cookie;
@@ -284,6 +296,7 @@ enum binder_deferred_state {
 
 struct binder_proc {
 	struct hlist_node proc_node;
+	struct binder_device *device;
 	struct rb_root threads;
 	struct rb_root nodes;
 	struct rb_root refs_by_desc;
@@ -317,6 +330,13 @@ struct binder_proc {
 	long default_priority;
 	struct dentry *debugfs_entry;
 };
+
+static bool binder_is_context_mgr(struct binder_node *node)
+{
+	return node && node->proc && node->proc->device &&
+	       node->proc->device->context_mgr_node == node;
+}
+
 
 enum {
 	BINDER_LOOPER_STATE_REGISTERED  = 0x01,
@@ -1012,8 +1032,8 @@ static int binder_inc_node(struct binder_node *node, int strong, int internal,
 		if (internal) {
 			if (target_list == NULL &&
 			    node->internal_strong_refs == 0 &&
-			    !(node == binder_context_mgr_node &&
-			    node->has_strong_ref)) {
+			    !(binder_is_context_mgr(node) &&
+			      node->has_strong_ref)) {
 				printk(KERN_ERR "binder: invalid inc strong "
 					"node for %d\n", node->debug_id);
 				return -EINVAL;
@@ -1132,7 +1152,7 @@ static struct binder_ref *binder_get_ref_for_node(struct binder_proc *proc,
 	rb_link_node(&new_ref->rb_node_node, parent, p);
 	rb_insert_color(&new_ref->rb_node_node, &proc->refs_by_node);
 
-	new_ref->desc = (node == binder_context_mgr_node) ? 0 : 1;
+	new_ref->desc = binder_is_context_mgr(node) ? 0 : 1;
 	for (n = rb_first(&proc->refs_by_desc); n != NULL; n = rb_next(n)) {
 		ref = rb_entry(n, struct binder_ref, rb_node_desc);
 		if (ref->desc > new_ref->desc)
@@ -1478,7 +1498,7 @@ static void binder_transaction(struct binder_proc *proc,
 			}
 			target_node = ref->node;
 		} else {
-			target_node = binder_context_mgr_node;
+			target_node = proc->device->context_mgr_node;
 			if (target_node == NULL) {
 				return_error = BR_DEAD_REPLY;
 				goto err_no_context_mgr_node;
@@ -1845,10 +1865,10 @@ int binder_thread_write(struct binder_proc *proc, struct binder_thread *thread,
 			if (get_user(target, (uint32_t __user *)ptr))
 				return -EFAULT;
 			ptr += sizeof(uint32_t);
-			if (target == 0 && binder_context_mgr_node &&
+			if (target == 0 && proc->device->context_mgr_node &&
 			    (cmd == BC_INCREFS || cmd == BC_ACQUIRE)) {
 				ref = binder_get_ref_for_node(proc,
-					       binder_context_mgr_node);
+					       proc->device->context_mgr_node);
 				if (ref->desc != target) {
 					binder_user_error("binder: %d:"
 						"%d tried to acquire "
@@ -2772,31 +2792,31 @@ static long binder_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 		break;
 	case BINDER_SET_CONTEXT_MGR:
-		if (binder_context_mgr_node != NULL) {
+		if (proc->device->context_mgr_node != NULL) {
 			printk(KERN_ERR "binder: BINDER_SET_CONTEXT_MGR already set\n");
 			ret = -EBUSY;
 			goto err;
 		}
-		if (binder_context_mgr_uid != -1) {
-			if (binder_context_mgr_uid != current->cred->euid) {
+		if (proc->device->context_mgr_uid != (uid_t)-1) {
+			if (proc->device->context_mgr_uid != current->cred->euid) {
 				printk(KERN_ERR "binder: BINDER_SET_"
 				       "CONTEXT_MGR bad uid %d != %d\n",
 				       current->cred->euid,
-				       binder_context_mgr_uid);
+				       proc->device->context_mgr_uid);
 				ret = -EPERM;
 				goto err;
 			}
 		} else
-			binder_context_mgr_uid = current->cred->euid;
-		binder_context_mgr_node = binder_new_node(proc, NULL, NULL);
-		if (binder_context_mgr_node == NULL) {
+			proc->device->context_mgr_uid = current->cred->euid;
+		proc->device->context_mgr_node = binder_new_node(proc, NULL, NULL);
+		if (proc->device->context_mgr_node == NULL) {
 			ret = -ENOMEM;
 			goto err;
 		}
-		binder_context_mgr_node->local_weak_refs++;
-		binder_context_mgr_node->local_strong_refs++;
-		binder_context_mgr_node->has_strong_ref = 1;
-		binder_context_mgr_node->has_weak_ref = 1;
+		proc->device->context_mgr_node->local_weak_refs++;
+		proc->device->context_mgr_node->local_strong_refs++;
+		proc->device->context_mgr_node->has_strong_ref = 1;
+		proc->device->context_mgr_node->has_weak_ref = 1;
 		break;
 	case BINDER_THREAD_EXIT:
 		binder_debug(BINDER_DEBUG_THREADS, "binder: %d:%d exit\n",
@@ -2965,6 +2985,8 @@ static int binder_open(struct inode *nodp, struct file *filp)
 	proc = kzalloc(sizeof(*proc), GFP_KERNEL);
 	if (proc == NULL)
 		return -ENOMEM;
+	proc->device = container_of(filp->private_data, struct binder_device,
+				    miscdev);
 	get_task_struct(current);
 	proc->tsk = current;
 	INIT_LIST_HEAD(&proc->todo);
@@ -3039,11 +3061,12 @@ static void binder_deferred_release(struct binder_proc *proc)
 	BUG_ON(proc->files);
 
 	hlist_del(&proc->proc_node);
-	if (binder_context_mgr_node && binder_context_mgr_node->proc == proc) {
+	if (proc->device->context_mgr_node &&
+	    proc->device->context_mgr_node->proc == proc) {
 		binder_debug(BINDER_DEBUG_DEAD_BINDER,
 			     "binder_release: %d context_mgr_node gone\n",
 			     proc->pid);
-		binder_context_mgr_node = NULL;
+		proc->device->context_mgr_node = NULL;
 	}
 
 	threads = 0;
@@ -3643,11 +3666,7 @@ static const struct file_operations binder_fops = {
 	.release = binder_release,
 };
 
-static struct miscdevice binder_miscdev = {
-	.minor = MISC_DYNAMIC_MINOR,
-	.name = "binder",
-	.fops = &binder_fops
-};
+/* registered devices come from CONFIG_ANDROID_BINDER_DEVICES */
 
 BINDER_DEBUG_ENTRY(state);
 BINDER_DEBUG_ENTRY(stats);
@@ -3666,7 +3685,38 @@ static int __init binder_init(void)
 	if (binder_debugfs_dir_entry_root)
 		binder_debugfs_dir_entry_proc = debugfs_create_dir("proc",
 						 binder_debugfs_dir_entry_root);
-	ret = misc_register(&binder_miscdev);
+	{
+		char *names = kstrdup(CONFIG_ANDROID_BINDER_DEVICES, GFP_KERNEL);
+		char *name, *p = names;
+		if (!names)
+			return -ENOMEM;
+		while ((name = strsep(&p, ",")) != NULL) {
+			struct binder_device *bd;
+			if (!*name)
+				continue;
+			if (binder_device_count >= BINDER_MAX_DEVICES)
+				break;
+			bd = &binder_devices[binder_device_count];
+			bd->miscdev.minor = MISC_DYNAMIC_MINOR;
+			bd->miscdev.name = kstrdup(name, GFP_KERNEL);
+			bd->miscdev.fops = &binder_fops;
+			bd->context_mgr_uid = (uid_t)-1;
+			if (!bd->miscdev.name) {
+				kfree(names);
+				return -ENOMEM;
+			}
+			ret = misc_register(&bd->miscdev);
+			if (ret) {
+				printk(KERN_ERR "binder: cannot register %s: %d\n",
+				       name, ret);
+				kfree(names);
+				return ret;
+			}
+			binder_device_count++;
+		}
+		kfree(names);
+	}
+	ret = 0;
 	if (binder_debugfs_dir_entry_root) {
 		debugfs_create_file("state",
 				    S_IRUGO,

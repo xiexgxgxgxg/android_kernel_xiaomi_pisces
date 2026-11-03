@@ -12,6 +12,14 @@ config ANDROID_BINDER_IPC
 	bool "Android Binder IPC Driver"
 	default n
 
+config ANDROID_BINDER_DEVICES
+	string "Default binder devices"
+	depends on ANDROID_BINDER_IPC
+	default "binder,hwbinder,vndbinder"
+	---help---
+	  Comma separated list of binder devices. Each device gets its own
+	  binder context (needed for Treble: binder, hwbinder, vndbinder).
+
 config ASHMEM
 	bool "Enable the Anonymous Shared Memory Subsystem"
 	default n

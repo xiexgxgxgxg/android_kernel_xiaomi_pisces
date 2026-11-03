@@ -1377,6 +1377,9 @@ static void binder_transaction_buffer_release(struct binder_proc *proc,
 		}
 		fp = (struct flat_binder_object *)(buffer->data + *offp);
 		switch (fp->type) {
+		case BINDER_TYPE_PTR:
+			/* pisces: SG buffer objects carry no binder refs */
+			break;
 		case BINDER_TYPE_BINDER:
 		case BINDER_TYPE_WEAK_BINDER: {
 			struct binder_node *node = binder_get_node(proc, fp->binder);

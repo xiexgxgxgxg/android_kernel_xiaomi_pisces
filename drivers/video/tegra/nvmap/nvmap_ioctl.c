@@ -210,6 +210,8 @@ int nvmap_ioctl_create(struct file *filp, unsigned int cmd, void __user *arg)
 			ref->handle->orig_size = op.size;
 	} else if (cmd == NVMAP_IOC_FROM_ID) {
 		ref = nvmap_duplicate_handle_id(client, op.id);
+		pr_info("pisces: from_id %lx by %s -> %ld\n", (unsigned long)op.id,
+			current->group_leader->comm, IS_ERR(ref) ? PTR_ERR(ref) : 0L);
 	} else {
 		return -EINVAL;
 	}

@@ -828,6 +828,8 @@ int nvmap_alloc_handle_id(struct nvmap_client *client,
 	trace_nvmap_alloc_handle_id(client, id, heap_mask, align, flags);
 	h->userflags = flags;
 	nr_page = ((h->size + PAGE_SIZE - 1) >> PAGE_SHIFT);
+	pr_info("pisces: nvmap alloc size=%zu heap_mask=%x flags=%x align=%zu\n",
+		h->size, heap_mask, flags, (size_t)align);
 	h->secure = !!(flags & NVMAP_HANDLE_SECURE);
 	h->flags = (flags & NVMAP_HANDLE_CACHE_FLAG);
 	h->align = max_t(size_t, align, L1_CACHE_BYTES);
@@ -890,6 +892,7 @@ int nvmap_alloc_handle_id(struct nvmap_client *client,
 
 out:
 	err = (h->alloc) ? 0 : err;
+	pr_info("pisces: nvmap alloc ret=%d size=%zu heap_mask=%x\n", err, h->size, heap_mask);
 	nvmap_handle_put(h);
 	return err;
 }
@@ -1082,6 +1085,8 @@ struct nvmap_handle_ref *nvmap_duplicate_handle_id(struct nvmap_client *client,
 	if (!h) {
 		nvmap_debug(client, "%s duplicate handle failed\n",
 			    current->group_leader->comm);
+		pr_info("pisces: duplicate id failed client=%s id=%lx task=%s\n",
+			client->name, id, current->group_leader->comm);
 		return ERR_PTR(-EPERM);
 	}
 

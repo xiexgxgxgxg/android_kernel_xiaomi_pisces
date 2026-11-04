@@ -623,10 +623,10 @@ struct nvmap_handle *nvmap_validate_get(struct nvmap_client *client,
 	while (n) {
 		h = rb_entry(n, struct nvmap_handle, node);
 		if ((unsigned long)h == id) {
-			if (client->super || h->global || (h->owner == client))
-				h = nvmap_handle_get(h);
-			else
-				h = NULL;
+			/* pisces: the LP-era gralloc exports handles to other
+			 * processes by id without marking them global; allow the
+			 * import instead of failing with EPERM. */
+			h = nvmap_handle_get(h);
 			spin_unlock(&client->dev->handle_lock);
 			return h;
 		}
@@ -636,6 +636,8 @@ struct nvmap_handle *nvmap_validate_get(struct nvmap_client *client,
 			n = n->rb_left;
 	}
 	spin_unlock(&client->dev->handle_lock);
+	pr_info("pisces: validate_get miss client=%s id=%lx\n",
+		client->name, id);
 	return NULL;
 }
 

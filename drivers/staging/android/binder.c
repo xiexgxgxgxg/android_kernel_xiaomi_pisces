@@ -1378,6 +1378,7 @@ static void binder_transaction_buffer_release(struct binder_proc *proc,
 		fp = (struct flat_binder_object *)(buffer->data + *offp);
 		switch (fp->type) {
 		case BINDER_TYPE_PTR:
+		case BINDER_TYPE_FDA:
 			/* pisces: SG buffer objects carry no binder refs */
 			break;
 		case BINDER_TYPE_BINDER:
@@ -1421,6 +1422,25 @@ static void binder_transaction_buffer_release(struct binder_proc *proc,
 			break;
 		}
 	}
+}
+
+
+/* pisces: translate one fd into the target process (FDA objects) */
+static int pisces_translate_fd(struct binder_proc *target_proc, u32 fd)
+{
+	struct file *file;
+	int target_fd;
+
+	file = fget(fd);
+	if (file == NULL)
+		return -EBADF;
+	target_fd = task_get_unused_fd_flags(target_proc, O_CLOEXEC);
+	if (target_fd < 0) {
+		fput(file);
+		return target_fd;
+	}
+	task_fd_install(target_proc, target_fd, file);
+	return target_fd;
 }
 
 static void binder_transaction(struct binder_proc *proc,
@@ -1750,6 +1770,8 @@ static void binder_transaction(struct binder_proc *proc,
 				binder_user_error("binder: %d:%d got transaction "
 					"with too large buffer\n",
 					proc->pid, thread->pid);
+				pr_info("pisces: PTR too large len=%zu left=%zu\n",
+					(size_t)bp->length, (size_t)buf_left);
 				return_error = BR_FAILED_REPLY;
 				goto err_bad_offset;
 			}
@@ -1759,6 +1781,8 @@ static void binder_transaction(struct binder_proc *proc,
 				binder_user_error("binder: %d:%d got transaction "
 					"with invalid buffer ptr\n",
 					proc->pid, thread->pid);
+				pr_info("pisces: PTR copy failed buf=%lx len=%zu\n",
+					(unsigned long)bp->buffer, (size_t)bp->length);
 				return_error = BR_FAILED_REPLY;
 				goto err_copy_data_failed;
 			}
@@ -1769,6 +1793,8 @@ static void binder_transaction(struct binder_proc *proc,
 			if (bp->flags & BINDER_BUFFER_FLAG_HAS_PARENT) {
 				struct binder_buffer_object *parent;
 				if (bp->parent >= num_offsets) {
+					pr_info("pisces: PTR bad parent %zu >= %zu\n",
+						(size_t)bp->parent, (size_t)num_offsets);
 					return_error = BR_FAILED_REPLY;
 					goto err_bad_offset;
 				}
@@ -1783,6 +1809,41 @@ static void binder_transaction(struct binder_proc *proc,
 				*(uintptr_t *)((u8 *)((uintptr_t)
 					parent->buffer + user_offset) +
 					bp->parent_offset) = bp->buffer;
+			}
+		} break;
+
+		case BINDER_TYPE_FDA: {
+			struct binder_fd_array_object *fda =
+				(struct binder_fd_array_object *)fp;
+			struct binder_buffer_object *parent;
+			u32 *fda_array;
+			size_t i;
+
+			if (fda->parent >= num_offsets) {
+				pr_info("pisces: FDA bad parent\n");
+				return_error = BR_FAILED_REPLY;
+				goto err_bad_offset;
+			}
+			parent = (struct binder_buffer_object *)
+				(t->buffer->data + off_start[fda->parent]);
+			if (parent->hdr.type != BINDER_TYPE_PTR ||
+			    fda->num_fds * sizeof(u32) > parent->length -
+			    fda->parent_offset) {
+				pr_info("pisces: FDA invalid parent/len\n");
+				return_error = BR_FAILED_REPLY;
+				goto err_bad_offset;
+			}
+			fda_array = (u32 *)((u8 *)(uintptr_t)parent->buffer +
+					    user_offset + fda->parent_offset);
+			for (i = 0; i < fda->num_fds; i++) {
+				int nfd = pisces_translate_fd(target_proc,
+							      fda_array[i]);
+				if (nfd < 0) {
+					pr_info("pisces: FDA translate fd failed %d\n", nfd);
+					return_error = BR_FAILED_REPLY;
+					goto err_bad_offset;
+				}
+				fda_array[i] = nfd;
 			}
 		} break;
 

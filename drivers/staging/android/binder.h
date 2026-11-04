@@ -33,6 +33,7 @@ enum {
 	BINDER_TYPE_WEAK_HANDLE	= B_PACK_CHARS('w', 'h', '*', B_TYPE_LARGE),
 	BINDER_TYPE_FD		= B_PACK_CHARS('f', 'd', '*', B_TYPE_LARGE),
 	BINDER_TYPE_PTR		= B_PACK_CHARS('p', 't', '*', B_TYPE_LARGE),
+	BINDER_TYPE_FDA		= B_PACK_CHARS('f', 'd', 'a', B_TYPE_LARGE),
 };
 
 enum {
@@ -80,6 +81,14 @@ struct binder_buffer_object {
 	unsigned int			flags;
 	size_t				buffer;
 	size_t				length;
+	size_t				parent;
+	size_t				parent_offset;
+};
+
+struct binder_fd_array_object {
+	struct binder_object_header	hdr;
+	unsigned int			pad;
+	size_t				num_fds;
 	size_t				parent;
 	size_t				parent_offset;
 };

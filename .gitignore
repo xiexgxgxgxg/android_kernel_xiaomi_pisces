@@ -1,0 +1,22 @@
+# build artifacts (never commit these)
+*.o
+*.o.*
+*.cmd
+*.ko
+*.mod.c
+*.order
+*.symvers
+*.a
+*.tmp
+.tmp_*
+vmlinux
+vmlinux.o
+System.map
+zImage
+Image
+uImage
+.config
+.config.old
+include/config
+include/generated
+arch/*/boot/*.dtb

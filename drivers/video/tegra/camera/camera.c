@@ -83,9 +83,14 @@ static long tegra_camera_ioctl(struct file *file,
 				"%s: Failed to copy arg from user\n", __func__);
 			return -EFAULT;
 		}
+		pr_info("tegra_camera: clk_set_rate id=%d module=%u rate=%lu\n",
+			camera->info.id, (unsigned int)id,
+			(unsigned long)camera->info.rate);
 		ret = tegra_camera_clk_set_rate(camera);
-		if (ret)
+		if (ret) {
+			pr_info("tegra_camera: clk_set_rate failed %d\n", ret);
 			return ret;
+		}
 		if (copy_to_user((void __user *)arg, &camera->info,
 				 sizeof(struct tegra_camera_clk_info))) {
 			dev_err(camera->dev,

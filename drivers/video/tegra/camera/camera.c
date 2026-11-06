@@ -183,8 +183,25 @@ static int tegra_camera_open(struct inode *inode, struct file *file)
 
 	dev_info(camera->dev, "%s: ++\n", __func__);
 
-	if (atomic_xchg(&camera->in_use, 1))
-		return -EBUSY;
+	/*
+	 * pisces: reference-count the camera device instead of refusing the
+	 * second open.  The tegra camera HAL keeps /dev/tegra_camera open after
+	 * a camera session ends, so the next session failed the VI/CSI control
+	 * setup with
+	 *   NvCameraViCsiCtrlInitialize: Error opening ctrl node
+	 *   (Device or resource busy)
+	 *   setupHalInLock:539 failed to open camera! Error: 0x8
+	 * i.e. only the very first camera open in a provider process worked.
+	 * The CSI rail/EMC/clock are only dropped by the last close.
+	 *
+	 * Note: the setup below is run on *every* open, not just the first one.
+	 * Skipping it made a rear->front switch open the front sensor but stream
+	 * nothing ("Camera Timeout: Sync Point ID: 15", black preview) because
+	 * the VI/CSI block still carried the rear sensor's configuration.  The
+	 * regulator/clock calls are reference counted, so re-running them is
+	 * balanced.
+	 */
+	atomic_inc(&camera->in_use);
 
 	file->private_data = camera;
 
@@ -232,6 +249,12 @@ static int tegra_camera_release(struct inode *inode, struct file *file)
 
 	mutex_lock(&camera->tegra_camera_lock);
 
+	/* pisces: only the last user powers the camera block down */
+	if (atomic_dec_return(&camera->in_use) > 0) {
+		mutex_unlock(&camera->tegra_camera_lock);
+		return 0;
+	}
+
 #ifdef CONFIG_THERMAL
 	/* unregister camera thermal cooling device */
 	tegra_camera_throttle_unregister(camera);
@@ -251,7 +274,6 @@ static int tegra_camera_release(struct inode *inode, struct file *file)
 
 release_exit:
 	mutex_unlock(&camera->tegra_camera_lock);
-	WARN_ON(!atomic_xchg(&camera->in_use, 0));
 	return 0;
 }
 

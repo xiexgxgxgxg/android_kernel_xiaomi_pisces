@@ -225,6 +225,28 @@ static irqreturn_t fsa8108_irq_handle(int irq, void *dev_id)
 	wake_lock_timeout(&data->wake_lock, 2 * HZ);
 	fsa8108_report_event(data, reg, pdata);
 
+	/*
+	 * pisces: publish the plug state to Android.  The input events below
+	 * only reach the input reader (no switch class device), while the
+	 * framework listens on /sys/class/switch/h2w for wired accessories.
+	 * State values follow the h2w convention: 0 = unplugged,
+	 * 1 = headset (with mic), 2 = headphones (no mic).
+	 */
+	{
+		int h2w = -1;
+		if (reg & FSA8108_4POLE_INSERTED_MASK)
+			h2w = 1;
+		else if (reg & FSA8108_3POLE_INSERTED_MASK)
+			h2w = 2;
+		else if (reg & FSA8108_DISCONNECT_MASK)
+			h2w = 0;
+		if (h2w >= 0) {
+			extern void tegra_asoc_utils_set_h2w_state(int state);
+			tegra_asoc_utils_set_h2w_state(h2w);
+			pr_info("%s: h2w state %d\n", __func__, h2w);
+		}
+	}
+
 	fsa8108_set_control_register(data, reg);
 
 	return IRQ_HANDLED;

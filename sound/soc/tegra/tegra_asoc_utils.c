@@ -204,6 +204,20 @@ struct snd_kcontrol_new tegra_avp_controls[] = {
 };
 
 #ifdef CONFIG_SWITCH
+/*
+ * pisces: let the jack-detection driver (fsa8108) publish the headset state
+ * through the "h2w" switch, which is what Android's WiredAccessoryManager
+ * observes to route audio to the headset.  The jack GPIO path is disabled on
+ * this board (TEGRA_GPIO_HP_DET is -1), so without this the framework never
+ * learns that a headset was plugged in.
+ */
+void tegra_asoc_utils_set_h2w_state(int state)
+{
+	if (psdev)
+		switch_set_state(psdev, state);
+}
+EXPORT_SYMBOL_GPL(tegra_asoc_utils_set_h2w_state);
+
 static int tegra_set_headset_plug_state(struct snd_kcontrol *kcontrol,
 			      struct snd_ctl_elem_value *ucontrol)
 {

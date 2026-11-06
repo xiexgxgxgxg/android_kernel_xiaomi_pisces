@@ -1441,8 +1441,19 @@ static int max77665_f_open(struct inode *inode, struct file *file)
 	if (!info)
 		return -ENODEV;
 
-	if (atomic_xchg(&info->in_use, 1))
-		return -EBUSY;
+	/*
+	 * pisces: reference-count instead of refusing a second open.  The tegra
+	 * camera HAL keeps /dev/torch open across a camera close, so the second
+	 * open in a session (the framework's Camera.openLegacy() probe followed
+	 * by the real Camera.open()) failed with -EBUSY:
+	 * "TorchNvc_Open err: cannot open nvc torch driver: Device or resource
+	 * busy" and the camera open aborted with 0x30012.  The flash stays
+	 * powered until the last close.
+	 */
+	if (atomic_inc_return(&info->in_use) > 1) {
+		file->private_data = info;
+		return 0;
+	}
 
 	file->private_data = info;
 	dev_dbg(info->dev, "%s\n", __func__);
@@ -1454,9 +1465,11 @@ static int max77665_f_release(struct inode *inode, struct file *file)
 	struct max77665_f_info *info = file->private_data;
 
 	dev_dbg(info->dev, "%s\n", __func__);
-	max77665_f_power_set(info, NVC_PWR_OFF);
 	file->private_data = NULL;
-	WARN_ON(!atomic_xchg(&info->in_use, 0));
+	/* pisces: only the last user powers the flash down */
+	if (atomic_dec_return(&info->in_use) > 0)
+		return 0;
+	max77665_f_power_set(info, NVC_PWR_OFF);
 	return 0;
 }
 

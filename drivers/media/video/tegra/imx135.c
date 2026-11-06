@@ -3234,10 +3234,19 @@ imx135_open(struct inode *inode, struct file *file)
 	struct imx135_info *info;
 
 	info = container_of(miscdev, struct imx135_info, miscdev_info);
-	/* check if the device is in use */
-	if (atomic_xchg(&info->in_use, 1)) {
-		pr_info("%s:BUSY!\n", __func__);
-		return -EBUSY;
+	/*
+	 * pisces: reference-count the sensor instead of refusing the second
+	 * open.  The tegra camera HAL opens /dev/imx135 from two places in a
+	 * single camera open (the ODM imager bring-up and the NvCamGrinder task
+	 * ~0.5 s later); with the stock single-user check the second open
+	 * returned -EBUSY, NvCameraHal::setupHalInLock() gave up with
+	 * 0x70001 ("Can not open camera device: Device or resource busy") and
+	 * the camera never streamed.  Everything that matters (power_on) is
+	 * only done for the first open and undone on the last close.
+	 */
+	if (atomic_inc_return(&info->in_use) > 1) {
+		file->private_data = info;
+		return 0;
 	}
 
 	file->private_data = info;
@@ -3246,6 +3255,7 @@ imx135_open(struct inode *inode, struct file *file)
 		info->pdata->power_on(&info->power);
 	else {
 		pr_err("%s:no valid power_on function.\n", __func__);
+		atomic_dec(&info->in_use);
 		return -EEXIST;
 	}
 
@@ -3257,14 +3267,16 @@ imx135_release(struct inode *inode, struct file *file)
 {
 	struct imx135_info *info = file->private_data;
 
+	file->private_data = NULL;
+
+	/* pisces: only the last user powers the sensor down */
+	if (atomic_dec_return(&info->in_use) > 0)
+		return 0;
+
 	if (info->pdata && info->pdata->power_off) {
 		info->pdata->power_off(&info->power);
 		imx135_edp_lowest(info);
 	}
-	file->private_data = NULL;
-
-	/* warn if device is already released */
-	WARN_ON(!atomic_xchg(&info->in_use, 0));
 	return 0;
 }
 

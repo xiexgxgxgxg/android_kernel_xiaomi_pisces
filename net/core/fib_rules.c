@@ -332,6 +332,21 @@ static int fib_nl_newrule(struct sk_buff *skb, struct nlmsghdr* nlh, void *arg)
 	if (tb[FRA_FWMASK])
 		rule->mark_mask = nla_get_u32(tb[FRA_FWMASK]);
 
+	/* pisces: accept the UID range netd sends with every rule.  The 3.4
+	 * lookup path has no socket UID to compare against, so the range is
+	 * recorded but not enforced; without accepting the attribute netd's
+	 * whole RTM_NEWRULE fails with EINVAL (see include/linux/fib_rules.h).
+	 */
+	if (tb[FRA_UID_RANGE]) {
+		struct fib_rule_uid_range *range =
+			(struct fib_rule_uid_range *)nla_data(tb[FRA_UID_RANGE]);
+		rule->uid_range.start = range->start;
+		rule->uid_range.end = range->end;
+	} else {
+		rule->uid_range.start = 0;
+		rule->uid_range.end = 0;
+	}
+
 	rule->action = frh->action;
 	rule->flags = frh->flags;
 	rule->table = frh_get_table(frh, tb);
@@ -543,6 +558,11 @@ static int fib_nl_fill_rule(struct sk_buff *skb, struct fib_rule *rule,
 	frh->family = ops->family;
 	frh->table = rule->table;
 	NLA_PUT_U32(skb, FRA_TABLE, rule->table);
+
+	if (rule->uid_range.start || rule->uid_range.end) {
+		struct fib_rule_uid_range range = rule->uid_range;
+		NLA_PUT(skb, FRA_UID_RANGE, sizeof(range), &range);
+	}
 	frh->res1 = 0;
 	frh->res2 = 0;
 	frh->action = rule->action;

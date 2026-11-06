@@ -49,10 +49,27 @@ enum {
 	FRA_TABLE,	/* Extended table id */
 	FRA_FWMASK,	/* mask for netfilter mark */
 	FRA_OIFNAME,
+	/*
+	 * pisces: Android 9's netd sends FRA_UID_RANGE (modern uapi value 20)
+	 * on every rule it installs.  The 3.4 enum stopped at FRA_OIFNAME (17),
+	 * so nlmsg_parse() rejected the whole message with -EINVAL and every
+	 * netd "network interface add" failed - that is what made WiFi hotspot
+	 * tear itself down right after starting (and would break any other
+	 * network setup that installs rules).  Keep the numbering identical to
+	 * the modern uapi so the attribute lands in the right slot.
+	 */
+	FRA_PAD,	/* 18: unused */
+	FRA_L3MDEV,	/* 19: unused */
+	FRA_UID_RANGE,	/* 20: UID range for this rule */
 	__FRA_MAX
 };
 
 #define FRA_MAX (__FRA_MAX - 1)
+
+struct fib_rule_uid_range {
+	__u32		start;
+	__u32		end;
+};
 
 enum {
 	FR_ACT_UNSPEC,

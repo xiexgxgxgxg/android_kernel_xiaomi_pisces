@@ -226,7 +226,17 @@ struct nvhost_device_data t11_vi_info = {
 			  BIT(NVSYNCPT_VI_ISP_4),
 	.modulemutexes	= BIT(NVMODMUTEX_VI),
 	.clocks		= { {"host1x", 136000000, 6} },
-	.exclusive	= true,
+	/*
+	 * pisces: the tegra camera HAL opens the VI channel several times per
+	 * camera session and never closes all of them; with exclusive = true
+	 * nvhost_getchannel() returns -EBUSY for the second open, which surfaces
+	 * as
+	 *   Opening channel /dev/nvhost-vi (0xc) failed
+	 *   NvCameraViCsiInitializeChannel: Failed !!! (error 0x30012)
+	 * Let the opens share the channel (refcount), like every other camera
+	 * resource on this port.
+	 */
+	.exclusive	= false,
 	NVHOST_MODULE_NO_POWERGATE_IDS,
 	NVHOST_DEFAULT_CLOCKGATE_DELAY,
 	.moduleid	= NVHOST_MODULE_VI,

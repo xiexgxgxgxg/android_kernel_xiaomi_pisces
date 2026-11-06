@@ -23,6 +23,7 @@ struct fib_rule {
 	struct fib_rule __rcu	*ctarget;
 	char			iifname[IFNAMSIZ];
 	char			oifname[IFNAMSIZ];
+	struct fib_rule_uid_range uid_range;
 	struct rcu_head		rcu;
 	struct net *		fr_net;
 };
@@ -79,6 +80,8 @@ struct fib_rules_ops {
 	[FRA_FWMARK]	= { .type = NLA_U32 }, \
 	[FRA_FWMASK]	= { .type = NLA_U32 }, \
 	[FRA_TABLE]     = { .type = NLA_U32 }, \
+	[FRA_UID_RANGE]	= { .type = NLA_BINARY, \
+			    .len = sizeof(struct fib_rule_uid_range) }, \
 	[FRA_GOTO]	= { .type = NLA_U32 }
 
 static inline void fib_rule_get(struct fib_rule *rule)

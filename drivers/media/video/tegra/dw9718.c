@@ -812,12 +812,21 @@ static int dw9718_open(struct inode *inode, struct file *file)
 		dev_err(&info->i2c_client->dev,
 			"%s err: invalid num (%u) and sync (%u) instance\n",
 			__func__, info->pdata->num, info->pdata->sync);
-	if (atomic_xchg(&info->in_use, 1))
-		return -EBUSY;
-	if (info->s_info != NULL) {
-		if (atomic_xchg(&info->s_info->in_use, 1))
-			return -EBUSY;
+	/*
+	 * pisces: reference-count instead of refusing a second open.  The tegra
+	 * camera HAL keeps /dev/focuser open across a camera close, so after the
+	 * first open (e.g. the Camera.openLegacy() attempt the framework aborts
+	 * before retrying with Camera.open()) every later open failed with
+	 * -EBUSY: "FocuserNvc_Open: cannot open focuser driver: /dev/focuser
+	 * Err: Device or resource busy" and NvCameraHal::setupHalInLock() gave
+	 * up with 0x70001.  Power is only dropped by the last close.
+	 */
+	if (atomic_inc_return(&info->in_use) > 1) {
+		file->private_data = info;
+		return 0;
 	}
+	if (info->s_info != NULL)
+		atomic_inc(&info->s_info->in_use);
 	file->private_data = info;
 	dw9718_pm_dev_wr(info, NVC_PWR_ON);
 	dw9718_position_wr(info, info->cap.focus_infinity);
@@ -831,11 +840,13 @@ static int dw9718_release(struct inode *inode, struct file *file)
 {
 	struct dw9718_info *info = file->private_data;
 	dev_dbg(&info->i2c_client->dev, "%s\n", __func__);
-	dw9718_pm_wr(info, NVC_PWR_OFF);
 	file->private_data = NULL;
-	WARN_ON(!atomic_xchg(&info->in_use, 0));
+	/* pisces: only the last user powers the focuser down */
+	if (atomic_dec_return(&info->in_use) > 0)
+		return 0;
+	dw9718_pm_wr(info, NVC_PWR_OFF);
 	if (info->s_info != NULL)
-		WARN_ON(!atomic_xchg(&info->s_info->in_use, 0));
+		atomic_dec(&info->s_info->in_use);
 	dw9718_sync_dis(info);
 	return 0;
 }

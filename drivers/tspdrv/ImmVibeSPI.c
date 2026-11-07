@@ -81,7 +81,20 @@
 /* Added by Ken on 20130603 */
 #define SUPPORT_TIMED_OUTPUT 1
 #define SUPPORT_WRITE_PAT    0
-#define DRV2604_USE_PWM_MODE 1
+/*
+ * pisces: the timed_output interface (what our vibrator HAL uses) cannot drive
+ * the PWM path.  vibrator_enable() sets MODE_PWM_OR_ANALOG_INPUT together with
+ * pwm_duty_enable(pwm, 0) and nothing ever writes a duty afterwards - the
+ * stock ROM always went through immvibed's force-sample stream, which is what
+ * updated the duty.  With PWM mode the motor therefore never moved, only the
+ * kernel timer counted down.
+ *
+ * RTP mode has a complete timed_output path: set RTP to 0x7F (100% rated
+ * voltage) and switch the chip to MODE_REAL_TIME_PLAYBACK; the DRV2604 then
+ * runs its closed-loop LRA drive (the probe already did the LRA auto
+ * calibration), and on timeout it goes back to MODE_STANDBY.
+ */
+#define DRV2604_USE_PWM_MODE 0
 #define DRV2604_USE_RTP_MODE (1-DRV2604_USE_PWM_MODE)
 
 /* From Xiaomi end */
@@ -591,14 +604,17 @@ static void drv2604_poll_go_bit(void)
 		schedule_timeout_interruptible(msecs_to_jiffies
 					(GO_BIT_POLL_INTERVAL));
 }
+#endif
 
+/* pisces: this board is built with SKIP_LRA_AUTOCAL == 1, but the
+ * timed_output RTP path (the one our vibrator HAL uses) needs this helper,
+ * so it can no longer live behind the auto-calibration guard. */
 static void drv2604_set_rtp_val(char value)
 {
 	char rtp_val[] = { REAL_TIME_PLAYBACK_REG, value };
 
 	drv2604_write_reg_val(rtp_val, sizeof(rtp_val));
 }
-#endif
 
 static void drv2604_change_mode(char mode)
 {

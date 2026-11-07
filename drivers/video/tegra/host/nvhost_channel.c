@@ -73,6 +73,11 @@ int nvhost_channel_submit(struct nvhost_job *job)
 		(void)nvhost_cdma_flush(&job->ch->cdma,
 				NVHOST_CHANNEL_LOW_PRIO_MAX_WAIT);
 
+	pr_info("nvhost_submit(%s): syncpt=%u incrs=%u gathers=%u waitchk=%u prio=%d\n",
+		dev_name(&job->ch->dev->dev), job->syncpt_id,
+		job->syncpt_incrs, job->num_gathers, job->num_waitchk,
+		job->priority);
+
 	return channel_op().submit(job);
 }
 
@@ -94,6 +99,16 @@ struct nvhost_channel *nvhost_getchannel(struct nvhost_channel *ch)
 
 	mutex_unlock(&ch->reflock);
 
+	/* pisces: keep the reason a channel open failed visible in dmesg */
+	if (err)
+		pr_info("nvhost_getchannel(%s): failed err=%d refcount=%d exclusive=%d\n",
+			dev_name(&ch->dev->dev), err, ch->refcount,
+			pdata->exclusive);
+	else
+		pr_info("nvhost_getchannel(%s): ok refcount=%d (was %d)\n",
+			dev_name(&ch->dev->dev), ch->refcount,
+			ch->refcount - 1);
+
 	/* Keep alive modules that needs to be when a channel is open */
 	if (!err && pdata->keepalive)
 		nvhost_module_busy(ch->dev);
@@ -112,6 +127,9 @@ void nvhost_putchannel(struct nvhost_channel *ch, struct nvhost_hwctx *ctx)
 			ch->cur_ctx = NULL;
 		mutex_unlock(&ch->submitlock);
 	}
+
+	pr_info("nvhost_putchannel(%s): refcount=%d ctx=%p\n",
+		dev_name(&ch->dev->dev), ch->refcount, ctx);
 
 	/* Allow keep-alive'd module to be turned off */
 	if (pdata->keepalive)

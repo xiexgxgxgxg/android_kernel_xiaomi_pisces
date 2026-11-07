@@ -89,6 +89,9 @@
 #include "board-touch-raydium.h"
 #include "clock.h"
 #include "board-pisces.h"
+/* the camera header uses the struct before nvhost.h declares it */
+struct nvhost_device;
+#include <media/tegra_v4l2_camera.h>
 #include "baseband-xmm-power.h"
 #include "tegra-board-id.h"
 #include "devices.h"
@@ -762,6 +765,26 @@ struct platform_device mhi_netdevice0 = {
 };
 #endif /* CONFIG_MHI_NETDEV */
 
+/* pisces: the tegra camera V4L2 host.  Without it there is no /dev/video0,
+ * and the 2013 camera HAL (libnvmm_camera) cannot configure the sensor, so
+ * every camera open failed with NvError NotFound (0x3).
+ */
+static struct tegra_camera_platform_data pisces_camera_pdata = {
+	.flip_h		= false,
+	.flip_v		= false,
+	.port		= TEGRA_CAMERA_PORT_CSI_A,
+	.lanes		= 2,
+	.continuous_clk	= true,
+};
+
+static struct platform_device tegra_camera_device = {
+	.name	= "tegra_camera",
+	.id	= -1,
+	.dev	= {
+		.platform_data = &pisces_camera_pdata,
+	},
+};
+
 static struct platform_device *pluto_devices[] __initdata = {
 	&tegra_pmu_device,
 	&tegra_rtc_device,
@@ -801,6 +824,7 @@ static struct platform_device *pluto_devices[] __initdata = {
 #ifdef CONFIG_MHI_NETDEV
 	&mhi_netdevice0,  /* MHI netdevice */
 #endif /* CONFIG_MHI_NETDEV */
+	&tegra_camera_device,
 };
 
 #ifdef CONFIG_USB_SUPPORT

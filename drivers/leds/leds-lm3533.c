@@ -161,9 +161,19 @@ static void lm3533_led_set(struct led_classdev *cdev, enum led_brightness value)
 
 	dev_dbg(led->cdev.dev, "%s - %d\n", __func__, value);
 
+	/*
+	 * pisces: always push the new brightness to the chip.
+	 *
+	 * The board data gives red/green a hardware blink pattern (650/200 ms),
+	 * which sets patten_enabled at probe time.  This function used to skip
+	 * the work in that case and expect somebody to write the "update" node
+	 * to flush all three LEDs; a plain "echo 255 > .../brightness" was then
+	 * silently dropped (the register kept reading 0) and the stock charger
+	 * binary, which writes the brightness nodes directly, could not light
+	 * the LED at all.
+	 */
 	led->new_brightness = value;
-	if (!led->patten_enabled)
-		schedule_work(&led->work);
+	schedule_work(&led->work);
 }
 
 static enum led_brightness lm3533_led_get(struct led_classdev *cdev)

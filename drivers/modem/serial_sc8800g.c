@@ -2404,9 +2404,26 @@ static int sc8800g_mdm_active(struct device *dev, int pwr_onoff)
 	mdv->ignore_mdm_rts = 0;
 
 	if (pwr_onoff) {
-		if (sc8800g_mdm_power_asserted(pdata)) {
-			WARNING("[%s] modem has been powered on already.\n", __func__);
+		if (bp_is_powered) {
+			WARNING("[%s] modem was already brought up.\n", __func__);
 			goto out;
+		}
+		if (sc8800g_mdm_power_asserted(pdata)) {
+			/*
+			 * BP_PWRON is a plain GPIO whose level survives a warm
+			 * reboot.  The modem rail is still on, but the power gates
+			 * and the reset line were never set up during this boot:
+			 * the old early-return skipped sc8800g_gpio_init(), so
+			 * MDM_EXTRSTN stayed asserted, the modem never signalled
+			 * mdm2ap1/mdm_alive, fild looped on "Modem power is off"
+			 * and rild crashed in at_channel_writer_destroy() because
+			 * no AT channel ever existed.  Cycle the rail and fall
+			 * through to the normal bring-up.
+			 */
+			WARNING("[%s] modem rail left on by warm reboot, power-cycling\n",
+				__func__);
+			sc8800g_deassert_mdm_power(pdata);
+			msleep(500);
 		}
 		INFO("[%s] assert mdm_power\n", __func__);
 		sc8800g_assert_mdm_power(pdata);

@@ -1029,8 +1029,18 @@ try:
 
 	if (sync) {
 		rc = es325_sync(es325, true);
-		if (rc < 0)
+		if (rc < 0) {
 			rc = es325_download(es325, false);
+			/* es325_download() is asynchronous: it returns 0 before
+			 * the firmware callback has run, so sync must be retried
+			 * after the image has actually been loaded, otherwise
+			 * power_state becomes ACTIVE without a synced DSP and the
+			 * first playback stays silent. */
+			if (rc == 0) {
+				msleep(1000);
+				rc = es325_sync(es325, true);
+			}
+		}
 	} else
 		msleep(40);
 

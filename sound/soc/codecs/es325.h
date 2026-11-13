@@ -355,6 +355,9 @@ extern void es325_init_slim_slave(struct slim_device *sbdev);
 extern void es325_slim_ch_num(struct snd_soc_dai_driver *es325_dai);
 #else
 #define es325_init_slim_slave(sbdev)
+
+unsigned int es325_read(struct snd_soc_codec *codec, unsigned int reg);
+int es325_write(struct snd_soc_codec *codec, unsigned int reg, unsigned int value);
 #define es325_slim_ch_num(es325_dai)
 #endif
 

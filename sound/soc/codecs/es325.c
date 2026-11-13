@@ -317,7 +317,7 @@ static void es305_hw_reset(struct es325_priv *es325)
 
 /* static void es325_ping(struct es325_priv *es325); */
 
-static int es325_write_block(struct es325_priv *es325, u32 *cmd_block)
+ int es325_write_block(struct es325_priv *es325, u32 *cmd_block)
 {
 	u32 api_word;
 	u8 msg[4];
@@ -387,7 +387,7 @@ static void es325_ping(struct es325_priv *es325)
 }
 */
 
-static unsigned int es325_read(struct snd_soc_codec *codec,
+unsigned int es325_read(struct snd_soc_codec *codec,
 			       unsigned int reg)
 {
 	struct es325_priv *es325 = &es325_priv;
@@ -451,7 +451,7 @@ static unsigned int es325_read(struct snd_soc_codec *codec,
 	return value;
 }
 
-static int es325_write(struct snd_soc_codec *codec, unsigned int reg,
+ int es325_write(struct snd_soc_codec *codec, unsigned int reg,
 		       unsigned int value)
 {
 	struct es325_priv *es325 = &es325_priv;

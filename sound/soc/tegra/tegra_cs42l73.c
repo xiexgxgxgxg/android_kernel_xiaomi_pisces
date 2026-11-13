@@ -819,19 +819,26 @@ static int tegra_cs42l73_event_int_spk(struct snd_soc_dapm_widget *w,
 	int ret;
 
 	if (machine->spkr_reg) {
-		if (SND_SOC_DAPM_EVENT_ON(event))
-			regulator_enable(machine->spkr_reg);
-		else
-			regulator_disable(machine->spkr_reg);
+		int r = SND_SOC_DAPM_EVENT_ON(event)
+			? regulator_enable(machine->spkr_reg)
+			: regulator_disable(machine->spkr_reg);
+		pr_info("pisces-spk: vdd_sys_audio %s rc=%d\n",
+			SND_SOC_DAPM_EVENT_ON(event) ? "on" : "off", r);
+	} else {
+		pr_info("pisces-spk: no vdd_sys_audio regulator\n");
 	}
 
-	if (machine->spk_edp_client == NULL)
+	if (machine->spk_edp_client == NULL) {
+		pr_info("pisces-spk: no EDP client\n");
 		goto err_null_spk_edp_client;
+	}
 
 	if (SND_SOC_DAPM_EVENT_ON(event)) {
 		ret = edp_update_client_request(
 				machine->spk_edp_client,
 				TEGRA_SPK_EDP_NEG_1, &approved);
+		pr_info("pisces-spk: EDP request E-1 ret=%d approved=%d\n",
+			ret, approved);
 		if (ret || approved != TEGRA_SPK_EDP_NEG_1) {
 			/* set codec voulme to 0 dB, E0 state */
 			snd_soc_write(codec, CS42L73_SPKDVOL, 0x0);
@@ -851,11 +858,15 @@ static int tegra_cs42l73_event_int_spk(struct snd_soc_dapm_widget *w,
 		}
 	}
 err_null_spk_edp_client:
-	if (!(machine->gpio_requested & GPIO_SPKR_EN))
+	if (!(machine->gpio_requested & GPIO_SPKR_EN)) {
+		pr_info("pisces-spk: spkr_en gpio not requested\n");
 		return 0;
+	}
 
 	gpio_set_value_cansleep(pdata->gpio_spkr_en,
 				!!SND_SOC_DAPM_EVENT_ON(event));
+	pr_info("pisces-spk: spkr_en(gpio %d) = %d\n", pdata->gpio_spkr_en,
+		gpio_get_value(pdata->gpio_spkr_en));
 
 	return 0;
 }

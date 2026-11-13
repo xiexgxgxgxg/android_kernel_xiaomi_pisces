@@ -255,9 +255,14 @@ long prctl_set_seccomp(unsigned long seccomp_mode, char __user *filter)
 {
 	long ret;
 
-	/* can set it only once to be even more secure */
+	/* SECCOMP_MODE_FILTER filters may be stacked: Android installs the
+	 * app filter first, then the WebView/Chromium sandbox installs its
+	 * own.  Only strict mode is terminal. */
 	ret = -EPERM;
-	if (unlikely(current->seccomp.mode))
+	if (unlikely(current->seccomp.mode == SECCOMP_MODE_STRICT))
+		goto out;
+	if (unlikely(current->seccomp.mode == SECCOMP_MODE_FILTER &&
+		     seccomp_mode != SECCOMP_MODE_FILTER))
 		goto out;
 
 	ret = -EINVAL;

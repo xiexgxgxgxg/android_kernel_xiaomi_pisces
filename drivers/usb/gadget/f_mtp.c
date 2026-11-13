@@ -28,6 +28,7 @@
 
 #include <linux/types.h>
 #include <linux/file.h>
+#include <linux/cred.h>
 #include <linux/device.h>
 #include <linux/miscdevice.h>
 
@@ -696,8 +697,16 @@ static void send_file_work(struct work_struct *data)
 					__cpu_to_le32(dev->xfer_transaction_id);
 		}
 
-		ret = vfs_read(filp, req->buf + hdr_size, xfer - hdr_size,
-								&offset);
+		{
+			/* The workqueue runs as kworker/root; FUSE (sdcard) checks
+			 * the caller's credentials, so use the credentials of the
+			 * process that opened the file (MtpServer).  Without this
+			 * every GET_OBJECT fails with EACCES/EIO. */
+			const struct cred *old_cred = override_creds(filp->f_cred);
+			ret = vfs_read(filp, req->buf + hdr_size,
+					xfer - hdr_size, &offset);
+			revert_creds(old_cred);
+		}
 		if (ret < 0) {
 			r = ret;
 			break;
@@ -768,9 +777,12 @@ static void receive_file_work(struct work_struct *data)
 		}
 
 		if (write_req) {
+			const struct cred *old_cred;
 			DBG(cdev, "rx %p %d\n", write_req, write_req->actual);
+			old_cred = override_creds(filp->f_cred);
 			ret = vfs_write(filp, write_req->buf, write_req->actual,
 				&offset);
+			revert_creds(old_cred);
 			DBG(cdev, "vfs_write %d\n", ret);
 			if (ret != write_req->actual) {
 				r = -EIO;

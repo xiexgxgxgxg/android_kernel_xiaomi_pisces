@@ -991,6 +991,17 @@ static int tegra_cs42l73_init(struct snd_soc_pcm_runtime *rtd)
 		gpio_direction_output(pdata->gpio_spkr_en, 0);
 	}
 
+	/* pisces: a warm reboot leaves vdd_sys_audio/ES325 powered, and the
+	 * ES325 then fails its sync (ack 0x00000000/0xffffffff) although DAPM
+	 * looks correct.  Force the rail off/on once here, before any audio
+	 * route exists, so every boot starts from the cold-boot state. */
+	if (machine->spkr_reg) {
+		pr_info("pisces-spk: resetting vdd_sys_audio for boot\n");
+		regulator_force_disable(machine->spkr_reg);
+		msleep(100);
+		regulator_enable(machine->spkr_reg);
+	}
+
 	/* Add call mode switch control */
 	ret = snd_ctl_add(codec->card->snd_card,
 		snd_ctl_new1(&tegra_call_mode_control, machine));
